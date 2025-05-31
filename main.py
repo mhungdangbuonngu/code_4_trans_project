@@ -3,13 +3,11 @@ import subprocess
 
 app = Flask(__name__)
 
-# Prompt template for translation
 PROMPT_TEMPLATE = (
     "Translate the following text from {source_lang} to {target_lang}:\n\n"
     "Text: {text}\n\n"
-    "Remember to return only the translation, explaination or addition information is not required"
+    "Remember to return only the translation, explanation or additional information is not required.\n"
     "Translation:"
-
 )
 
 @app.route('/translate', methods=['POST'])
@@ -19,11 +17,9 @@ def translate():
     source_lang = data.get("source_lang", "").strip()
     target_lang = data.get("target_lang", "").strip()
 
-    # Validate input
     if not text or not source_lang or not target_lang:
         return jsonify({"error": "Missing required fields: text, source_lang, target_lang"}), 400
 
-    # Construct prompt
     prompt = PROMPT_TEMPLATE.format(
         source_lang=source_lang,
         target_lang=target_lang,
@@ -31,7 +27,7 @@ def translate():
     )
 
     try:
-        # Call Ollama using subprocess
+        # subprocess call to ollama CLI
         result = subprocess.run(
             ["ollama", "run", "gemma3:4b", prompt],
             stdout=subprocess.PIPE,
@@ -41,6 +37,7 @@ def translate():
         )
 
         if result.returncode != 0:
+            # Return stderr output if error occurs
             return jsonify({"error": result.stderr.strip()}), 500
 
         translation = result.stdout.strip()
