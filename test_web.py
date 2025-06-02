@@ -13,7 +13,7 @@ if st.button("Translate"):
     else:
         with st.spinner("Translating..."):
             try:
-                response = requests.post("http://localhost:5000/translate", json={
+                response = requests.post("http://192.168.0.101:5000/translate", json={
                     "text": text,
                     "source_lang": source_lang,
                     "target_lang": target_lang
