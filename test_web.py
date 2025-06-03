@@ -2,7 +2,16 @@ import streamlit as st
 import requests
 import io 
 st.set_page_config(page_title="Language Translator", layout="centered")
-st.title("🈯 Language Translator (Gemma3 4B via Ollama)")
+if st.button("🔌 Test API Connection"):
+    try:
+        response = requests.post("http://172.16.3.193:8088/translate")  # Change this to any available health endpoint
+        if response.status_code == 200:
+            st.success("API is reachable! ✅")
+        else:
+            st.warning(f"API responded with status code {response.status_code}")
+    except Exception as e:
+        st.error(f"API connection failed: {e}")
+
 source_lang = st.text_input("Source Language (e.g., English)")
 target_lang = st.text_input("Target Language (e.g., Spanish)")
 mode = st.radio("Choose input method:", ("✍️ Type text", "📂 Upload file"))
@@ -20,15 +29,16 @@ else:
             else:
                 with st.spinner("Translating..."):
                     try:
-                        response = requests.post("http://localhost:5000/translate", json={
-                            "text": text_input,
+                        response = requests.post("http://172.16.3.193:8088/translate", data={
                             "source_lang": source_lang,
-                            "target_lang": target_lang
+                            "target_lang": target_lang,
+                            "text": text_input
                         })
+
                         if response.status_code == 200:
                             result = response.json()
                             st.success("Translation:")
-                            st.write(result["translation"])
+                            st.write(result["data"])
                         else:
                             st.error(f"API Error: {response.status_code}\n{response.text}")
                     except Exception as e:
@@ -42,14 +52,15 @@ else:
                 if st.button("Translate File"):
                     with st.spinner("Translating file..."):
                         try:
-                            response = requests.post("http://localhost:5000/translate", json={
-                                "text": file_text,
+                            response = requests.post("http://172.16.3.193:8088/translate", data={
                                 "source_lang": source_lang,
-                                "target_lang": target_lang
+                                "target_lang": target_lang,
+                                "text": file_text
                             })
+
                             if response.status_code == 200:
                                 result = response.json()
-                                translated_text = result["translation"]
+                                translated_text = result["data"]
 
                                 # Download button
                                 st.success("Translation completed!")
