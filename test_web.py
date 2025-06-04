@@ -1,76 +1,92 @@
-import streamlit as st
+from datasets import load_dataset
 import requests
-import io 
-st.set_page_config(page_title="Language Translator", layout="centered")
-if st.button("🔌 Test API Connection"):
-    try:
-        response = requests.post("http://172.16.3.193:8088/translate")  # Change this to any available health endpoint
-        if response.status_code == 200:
-            st.success("API is reachable! ✅")
-        else:
-            st.warning(f"API responded with status code {response.status_code}")
-    except Exception as e:
-        st.error(f"API connection failed: {e}")
+import sacrebleu
+import time
 
-source_lang = st.text_input("Source Language (e.g., English)")
-target_lang = st.text_input("Target Language (e.g., Spanish)")
-mode = st.radio("Choose input method:", ("✍️ Type text", "📂 Upload file"))
-# Common validation
-if not source_lang or not target_lang:
-    st.warning("Please enter both source and target languages.")
+# Define the target languages and their codes
+languages = {
+    "fra_Latn": "French",
+    "jpn_Latn": "Japanese",
+    "deu_Latn": "German",
+    "kor_Hang": "Korean",
+    "spa_Latn": "Spanish",
+    "tha_Thai": "Thai",
+    "lao_Laoo": "Lao",
+    "khm_Khmr": "Khmer"
+}
 
-else:
-    if mode == "✍️ Type text":
-        text_input = st.text_area("Enter text to translate:")
+# Open output file to save BLEU scores
+with open("bleu_scores_nllb.txt", "w", encoding="utf-8") as out_file:
+    for lang_code, lang_name in languages.items():
+        print(f"Evaluating {lang_name} ({lang_code})...")
 
-        if st.button("Translate Text"):
-            if not text_input.strip():
-                st.warning("Please enter text to translate.")
-            else:
-                with st.spinner("Translating..."):
-                    try:
-                        response = requests.post("http://172.16.3.193:8088/translate", data={
-                            "source_lang": source_lang,
-                            "target_lang": target_lang,
-                            "text": text_input
-                        })
+        try:
+            # Load the dataset
+            dataset = load_dataset("allenai/nllb", split="train")
+        except Exception as e:
+            print(f"Failed to load dataset: {e}")
+            out_file.write(f"{lang_name} ({lang_code}): Dataset load error.\n")
+            continue
 
-                        if response.status_code == 200:
-                            result = response.json()
-                            st.success("Translation:")
-                            st.write(result["data"])
-                        else:
-                            st.error(f"API Error: {response.status_code}\n{response.text}")
-                    except Exception as e:
-                        st.error(f"Request failed: {e}")
-    elif mode == "📂 Upload file":
-            uploaded_file = st.file_uploader("Upload a .txt file", type=["txt"])
+        # Filter dataset for the specific language pair
+        filtered_dataset = [item for item in dataset if lang_code in item['translation'] and 'eng_Latn' in item['translation']]
+        
+        if not filtered_dataset:
+            print(f"No data found for language pair eng_Latn-{lang_code}")
+            out_file.write(f"{lang_name} ({lang_code}): No data found for language pair.\n")
+            continue
 
-            if uploaded_file:
-                file_text = uploaded_file.read().decode("utf-8")
+        source_sentences = [item['translation']['eng_Latn'] for item in filtered_dataset]
+        target_sentences = [item['translation'][lang_code] for item in filtered_dataset]
 
-                if st.button("Translate File"):
-                    with st.spinner("Translating file..."):
-                        try:
-                            response = requests.post("http://172.16.3.193:8088/translate", data={
-                                "source_lang": source_lang,
-                                "target_lang": target_lang,
-                                "text": file_text
-                            })
+        hypotheses = []
+        for i, src in enumerate(source_sentences):
+            try:
+                print(f"Translating sentence {i}: {src}")
+                response = requests.post(
+                    "http://172.16.3.193:8088/translate",
+                    data={
+                        "source_lang": "eng_Latn",
+                        "target_lang": lang_code,
+                        "text": src
+                    },
+                    timeout=10
+                )
+                print(f"Response status: {response.status_code}")
+                if response.status_code == 200:
+                    result = response.json()
+                    translated = result.get("data", "").strip()
+                    hypotheses.append(translated)
+                else:
+                    print(f"API error for sentence {i}: {response.status_code} - {response.text}")
+                    hypotheses.append("")
+            except Exception as e:
+                print(f"Exception for sentence {i}: {e}")
+                hypotheses.append("")
 
-                            if response.status_code == 200:
-                                result = response.json()
-                                translated_text = result["data"]
+            # Be nice to the API
+            time.sleep(0.1)
 
-                                # Download button
-                                st.success("Translation completed!")
-                                st.download_button(
-                                    label="📥 Download Translated File",
-                                    data=translated_text.encode("utf-8"),
-                                    file_name="translated_file.txt",
-                                    mime="text/plain"
-                                )
-                            else:
-                                st.error(f"API Error: {response.status_code}\n{response.text}")
-                        except Exception as e:
-                            st.error(f"Request failed: {e}")    
+        # Save raw translations for inspection
+        with open(f"translations_{lang_code}.txt", "w", encoding="utf-8") as f:
+            for src, ref, hyp in zip(source_sentences, target_sentences, hypotheses):
+                f.write(f"SRC: {src}\nREF: {ref}\nHYP: {hyp}\n\n")
+
+        # Filter out empty translations
+        filtered_hypotheses = []
+        filtered_references = []
+        for hyp, ref in zip(hypotheses, target_sentences):
+            if hyp.strip():
+                filtered_hypotheses.append(hyp)
+                filtered_references.append(ref)
+
+        # Skip BLEU if no valid translations
+        if not filtered_hypotheses:
+            print(f"Skipping BLEU for {lang_code}: No valid translations.")
+            out_file.write(f"{lang_name} ({lang_code}): No valid translations.\n")
+            continue
+
+        # Compute BLEU
+        bleu = sacrebleu.corpus_bleu(filtered_hypotheses, [filtered_references])
+        print(f"{lang_name}: BLEU = {bleu.score:.2f}")
+        out_file.write(f"{lang_name} ({lang_code}): {bleu.score:.2f}\n")
