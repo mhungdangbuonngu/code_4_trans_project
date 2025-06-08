@@ -5,20 +5,26 @@ from moviepy import VideoFileClip
 import torchaudio
 from transformers import AutoModelForCTC, AutoProcessor
 import torch
-import soundfile as sf
 
 app = Flask(__name__)
 
-# Load model and processor
-model = AutoModelForCTC.from_pretrained("facebook/mms-1b-all")
-processor = AutoProcessor.from_pretrained("facebook/mms-1b-all")
+# Load base model and processor
+BASE_MODEL = "facebook/mms-1b-all"
+model = AutoModelForCTC.from_pretrained(BASE_MODEL)
+processor = AutoProcessor.from_pretrained(BASE_MODEL)
 
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-SEGMENT_DURATION = 30  # seconds
+SEGMENT_DURATION = 10  # seconds
 
-def split_audio(audio_path, segment_duration=30):
+# Supported languages and their adapter names
+LANG_ADAPTERS = {
+    "eng": "eng",
+    "fra": "fra"
+}
+
+def split_audio(audio_path, segment_duration=10):
     waveform, sample_rate = torchaudio.load(audio_path)
     total_duration = waveform.shape[1] / sample_rate
     segments = []
@@ -32,7 +38,7 @@ def split_audio(audio_path, segment_duration=30):
         segment_wave = waveform[:, start_frame:end_frame]
 
         segment_path = f"{audio_path}_segment_{i}.wav"
-        torchaudio.save(segment_path, segment_wave, sample_rate)  # ✅ CORRECT SAVE
+        torchaudio.save(segment_path, segment_wave, sample_rate)
         segments.append({
             "start": start,
             "end": end,
@@ -48,6 +54,20 @@ def transcribe():
     file = request.files["file"]
     if file.filename == "":
         return jsonify({"error": "Empty filename"}), 400
+
+    # Get language
+    lang_code = request.form.get('language', 'eng').lower()
+    if lang_code not in LANG_ADAPTERS:
+        return jsonify({'error': "Invalid language, choose 'eng' or 'fra'"}), 400
+
+    adapter_name = LANG_ADAPTERS[lang_code]
+
+    # Load and activate adapter
+    try:
+        processor.tokenizer.set_target_lang(adapter_name)
+        model.load_adapter(adapter_name)
+    except Exception as e:
+        return jsonify({"error": f"Failed to load adapter for '{lang_code}': {str(e)}"}), 500
 
     video_path = os.path.join(UPLOAD_FOLDER, str(uuid.uuid4()) + ".mp4")
     audio_path = video_path.replace(".mp4", ".wav")

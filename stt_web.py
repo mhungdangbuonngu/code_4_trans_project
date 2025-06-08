@@ -10,7 +10,8 @@ st.title("🎥 Video Transcription with Subtitles")
 
 # File uploader for MP4 video
 video_file = st.file_uploader("Upload an MP4 video", type=["mp4"])
-
+language = st.selectbox("Select language of the video",["English","France"])
+lang_code = "eng" if language == "English" else "fra"
 if st.button("Transcribe"):
     if video_file is None:
         st.error("Please upload a video file.")
@@ -27,7 +28,8 @@ if st.button("Transcribe"):
             # Send video file to transcription API
             with open(tmp_video_path, "rb") as f:
                 files = {"file": f}
-                response = requests.post("http://localhost:5000/transcribe", files=files)
+                data = {"language": lang_code}
+                response = requests.post("http://localhost:5000/transcribe", files=files, data=data)
 
             # Simulate progress
             for i in range(10, 100, 10):
@@ -59,10 +61,12 @@ if st.button("Transcribe"):
 
                 # Display video with subtitles
                 st.markdown("### 🎞️ Video with Subtitles")
+                subtitle_label = "French" if lang_code == "fra" else "English"
+                subtitle_lang = "fr" if lang_code == "fra" else "en"
                 video_html = f"""
                 <video width="700" controls>
                     <source src="data:video/mp4;base64,{video_b64}" type="video/mp4">
-                    <track src="data:text/vtt;base64,{vtt_b64}" kind="subtitles" srclang="en" label="English" default>
+                    <track src="data:text/vtt;base64,{vtt_b64}" kind="subtitles" srclang="{subtitle_lang}" label="{subtitle_label}" default>
                     Your browser does not support the video tag.
                 </video>
                 """
