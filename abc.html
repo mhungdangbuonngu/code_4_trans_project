@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Dịch phụ đề</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 40px;
+    }
+    textarea, select, input, button {
+      width: 100%;
+      margin-top: 10px;
+      padding: 10px;
+    }
+    pre {
+      background: #f4f4f4;
+      padding: 15px;
+      overflow-x: auto;
+    }
+    .result-block {
+      margin-top: 30px;
+    }
+    .compare-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+    }
+    .compare-table th, .compare-table td {
+      border: 1px solid #ccc;
+      padding: 10px;
+      vertical-align: top;
+    }
+    .compare-table th {
+      background-color: #eee;
+    }
+    .source-cell {
+      background: #fdfdfd;
+    }
+    .translated-cell {
+      background: #f0f8ff;
+    }
+    #downloadBtn {
+      display: none;
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Dịch phụ đề SRT bằng FastAPI</h1>
+
+  <label for="subtitle">Nhập nội dung SRT:</label>
+  <textarea id="subtitle" rows="10" placeholder="1\n00:00:00,000 --> 00:00:02,000\nXin chào..."></textarea>
+
+  <label for="source_lang">Ngôn ngữ gốc:</label>
+  <select id="source_lang">
+    <option value="Vietnamese" selected>Tiếng Việt</option>
+    <option value="English">Tiếng Anh</option>
+    <option value="French">Tiếng Pháp</option>
+    <option value="Germany">Tiếng Đức</option>
+  </select>
+
+  <label for="target_lang">Ngôn ngữ đích:</label>
+  <select id="target_lang">
+    <option value="English">Tiếng Anh</option>
+    <option value="Vietnamese" selected>Tiếng Việt</option>
+    <option value="French">Tiếng Pháp</option>
+    <option value="Germany">Tiếng Đức</option>
+    </select>
+
+  <label for="llm_model">Mô hình LLM:</label>
+  <select id="llm_model">
+    <option value="nnlb" selected>NNLB</option>
+    <option value="gpt">GPT</option>
+  </select>
+
+  <label for="max_words">Số từ tối đa mỗi dòng:</label>
+  <input type="number" id="max_words" value="15" min="1" max="50">
+
+  <label><input type="checkbox" id="translate" checked> Dịch</label>
+  <label><input type="checkbox" id="split_sentences" checked> Tách câu</label>
+
+  <button onclick="submitForm()">Gửi yêu cầu</button>
+
+  <div class="result-block">
+    <h2>Kết quả:</h2>
+    <p><strong>Thời gian xử lý:</strong> <span id="elapsed_time"></span> giây</p>
+
+    <!-- Nút tải file -->
+    <button id="downloadBtn" onclick="downloadSRT()">Tải về SRT đã dịch</button>
+
+    <h3>Bảng so sánh câu gốc & câu dịch:</h3>
+    <table class="compare-table" id="compare_table">
+      <thead>
+        <tr>
+          <th>Câu gốc</th>
+          <th>Câu dịch</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <h3>Lỗi (nếu có):</h3>
+    <pre id="error_msg" style="color: red;"></pre>
+  </div>
+
+  <script>
+    let translatedSRT = "";
+
+    async function submitForm() {
+      const data = {
+        subtitle: document.getElementById("subtitle").value,
+        source_lang: document.getElementById("source_lang").value,
+        target_lang: document.getElementById("target_lang").value,
+        max_words_per_line: parseInt(document.getElementById("max_words").value),
+        llm_model: document.getElementById("llm_model").value,
+        translate: document.getElementById("translate").checked,
+        split_sentences: document.getElementById("split_sentences").checked
+      };
+
+      try {
+        const response = await fetch("http://localhost:1630/api/translate_subtitles", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(data)
+        });
+
+        const result = await response.json();
+
+        document.getElementById("elapsed_time").innerText = result._time.toFixed(2);
+        translatedSRT = result.srt_file_data || "";
+        document.getElementById("downloadBtn").style.display = translatedSRT ? "inline-block" : "none";
+
+        const sourceData = result.source_data || [];
+        const translateData = result.translate_data || [];
+
+        const tableBody = document.getElementById("compare_table").querySelector("tbody");
+        tableBody.innerHTML = "";
+
+        const maxLen = Math.max(sourceData.length, translateData.length);
+        for (let i = 0; i < maxLen; i++) {
+          const row = document.createElement("tr");
+
+          const sourceCell = document.createElement("td");
+          sourceCell.textContent = sourceData[i] || "";
+          sourceCell.classList.add("source-cell");
+
+          const translatedCell = document.createElement("td");
+          translatedCell.textContent = translateData[i] || "";
+          translatedCell.classList.add("translated-cell");
+
+          row.appendChild(sourceCell);
+          row.appendChild(translatedCell);
+          tableBody.appendChild(row);
+        }
+
+        document.getElementById("error_msg").innerText = result._exception || "";
+      } catch (err) {
+        document.getElementById("error_msg").innerText = "Lỗi kết nối: " + err.message;
+      }
+    }
+
+    function downloadSRT() {
+      const blob = new Blob([translatedSRT], { type: "text/plain;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "translated_subtitles.srt";
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+  </script>
+</body>
+</html>
